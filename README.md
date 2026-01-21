@@ -3,6 +3,10 @@
 ## Overview
 This project is an advanced AWS Cost Optimization and Pricing Analysis tool. It leverages multi-agent AI systems to provide data-driven pricing recommendations, demand forecasting, and "What-If" scenario analysis. The tool is designed to help organizations optimize their cloud spend and improve ROI through intelligent pricing strategies.
 
+### Demo Video
+![Project Demo](aws%20cost%20final%20(online-video-cutter.com).mp4)
+
+
 ## Detailed Features
 - **Dynamic Pricing Orchestrator**: A sequential multi-agent pipeline that processes pricing from base calculation through competitive and inventory adjustments.
 - **Scenario Simulation (What-If)**: Real-time simulation of market changes, competitor price drops, or promotional events with instant ROI impact analysis.
