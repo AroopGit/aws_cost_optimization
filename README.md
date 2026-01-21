@@ -4,7 +4,12 @@
 This project is an advanced AWS Cost Optimization and Pricing Analysis tool. It leverages multi-agent AI systems to provide data-driven pricing recommendations, demand forecasting, and "What-If" scenario analysis. The tool is designed to help organizations optimize their cloud spend and improve ROI through intelligent pricing strategies.
 
 ### Demo Video
-![Project Demo](aws%20cost%20final%20(online-video-cutter.com).mp4)
+
+<div align="center">
+  <video src="demo_video.mp4" controls width="100%" style="max-height: 500px;">
+    Your browser does not support the video tag.
+  </video>
+</div>
 
 
 ## Detailed Features
