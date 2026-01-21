@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GCPL Pricing Simulator</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
+  <body class="bg-slate-950">
+      <div id="app"></div>
+
+
+    <script type="text/babel">
+      const { useState, useEffect, useMemo } = React;
+      const API_BASE = "http://localhost:8000";
+
+      const formatCurrency = (value) => {
+        if (typeof value !== "number" || Number.isNaN(value)) return "₹-";
+        return `₹${value.toFixed(2)}`;
+      };
+
+      const formatPercent = (value) => {
+        if (typeof value !== "number" || Number.isNaN(value)) return "-";
+        const prefix = value >= 0 ? "+" : "";
+        return `${prefix}${value.toFixed(2)}%`;
+      };
+
+      const buildCuratedProducts = (skus = [], channels = [], regions = []) => {
+        const templates = [
+          { label: "Dishwash Liquid Power Pack", category: "Home Care • Dishwash", priceLabel: "₹128.10" },
+          { label: "Bathroom Cleaner Spray", category: "Home Hygiene", priceLabel: "₹146.00" },
+          { label: "Laundry Detergent Powder", category: "Fabric Care", priceLabel: "₹152.70" },
+        ];
+
+        return templates.map((item, idx) => ({
+          ...item,
+          id: `product-${idx}`,
+          sku: skus[idx % (skus.length || 1)] || `GCPL_SKU_${(idx + 1)
+            .toString()
+            .padStart(4, "0")}`,
+          channel: channels[idx % (channels.length || 1)] || ["GT", "MT", "ECOM"][idx] || "GT",
+          region: regions[idx % (regions.length || 1)] || ["North", "South", "East"][idx] || "North",
+        }));
+      };
+
+      const getPrimarySelection = (result) => {
+        if (!result) return null;
+        return result.selection || result.what_if?.selection || result.original?.selection || null;
+      };
+
+      const getPrimaryCandidates = (result) => {
+        if (!result) return {};
+        return (
+          result.candidates ||
+          result.what_if?.candidates ||
+          result.original?.candidates ||
+          {}
+        );
+      };
+
+      const buildRecommendationData = (result, context) => {
+        const selection = getPrimarySelection(result);
+        const header =
+          context && context.sku
+            ? `${context.sku} • ${context.channel || ""} ${context.region || ""}`.trim()
+            : "AI Scenario";
+
+        if (!selection) {
+          return {
+            title: `${header} • Ready for AI analysis`,
+            tiles: [
+              { label: "Value Price", value: "₹282", description: "Market-sensitive value anchor" },
+              { label: "Optimal Price", value: "₹328", description: "AI recommended sweet spot" },
+              { label: "Premium Price", value: "₹420", description: "High positioning play" },
+            ],
+            summary: "Select a dishwash / home care SKU and run an action to see GCPL guidance across GT/MT/ECOM/QCOM and North/South/East/West.",
+          };
+        }
+
+        const optimal = formatCurrency(selection.price_recommended);
+        const valuePrice = selection.price_recommended
+          ? formatCurrency(selection.price_recommended * 0.92)
+          : "₹-";
+        const premiumPrice = selection.price_recommended
+          ? formatCurrency(selection.price_recommended * 1.08)
+          : "₹-";
+
+          return {
+          title: `${header} • AI Analysis Complete`,
+          tiles: [
+            { label: "Value Price", value: valuePrice, description: "Volume-seeking tactic" },
+            { label: "Optimal Price", value: optimal, description: "Balanced ROI recommendation" },
+            { label: "Premium Price", value: premiumPrice, description: "Max margin posture" },
+          ],
+          summary: `Strategy: ${selection.source_key || "price_inventory"} • Estimated margin ${formatPercent(
+            selection.margin_pct
+          )} • Approval ${selection.approval}`,
+        };
+      };
+
+      const buildAgentInsight = (result) => {
+        if (!result) {
+          return {
+            title: "Agent Insights",
+            items: [
+              { label: "Base Agent", value: "Awaiting run", note: "Seasonality & base price" },
+              { label: "Promo Agent", value: "-", note: "Promo depth pending" },
+              { label: "Competitor Agent", value: "-", note: "Gap analysis pending" },
+              { label: "Inventory Agent", value: "-", note: "Inventory impact pending" },
+            ],
+          };
+        }
+
+        const outputs =
+          result.agent_outputs ||
+          (result.original && {
+            base: { price: result.original.candidates?.price_base, reason: result.original.reasons?.base },
+            promo: { price: result.original.candidates?.price_promo, meta: result.original.reasons?.promo },
+            comp: { price: result.original.candidates?.price_comp, meta: result.original.reasons?.comp },
+            inventory: { price: result.original.candidates?.price_inventory, meta: result.original.reasons?.inv },
+          });
+
+        if (!outputs) {
+          return {
+            title: "Agent Insights",
+            items: [
+              { label: "Demand Agent", value: "-", note: "No data" },
+              { label: "Promo Agent", value: "-", note: "No data" },
+              { label: "Competitor Agent", value: "-", note: "No data" },
+              { label: "Inventory Agent", value: "-", note: "No data" },
+            ],
+          };
+        }
+
+          return {
+          title: "Pricing Orchestrator Agents",
+          items: [
+            {
+              label: "Base Agent",
+              value: formatCurrency(outputs.base?.price),
+              note: outputs.base?.reason || "Seasonality applied",
+            },
+            {
+              label: "Promo Agent",
+              value: formatCurrency(outputs.promo?.price),
+              note: outputs.promo?.meta?.note || "Promo depth respected guardrails",
+            },
+            {
+              label: "Competitor Agent",
+              value: formatCurrency(outputs.comp?.price),
+              note: outputs.comp?.meta?.note || "Gap vs competition",
+            },
+            {
+              label: "Inventory Agent",
+              value: formatCurrency(outputs.inventory?.price),
+              note: outputs.inventory?.meta?.note || "Inventory signal",
+            },
+          ],
+        };
+      };
+
+      const buildExecutionSteps = (result) => {
+        const selection = getPrimarySelection(result);
+        const candidates = getPrimaryCandidates(result);
+        const steps = [
+          {
+            id: 1,
+            title: "Base Agent • Demand Forecasting",
+            description: "Analyzing historical trend, seasonality, and base price uplift.",
+            result: selection
+              ? `Base price ${formatCurrency(candidates.price_base)} applied with seasonality`
+              : "Awaiting run",
+            status: selection ? "completed" : "pending",
+          },
+          {
+            id: 2,
+            title: "Promo Agent • Promotion Planning",
+            description: "Evaluating promo depth vs SOP guardrails.",
+            result: selection
+              ? `Promotion aligned at ${formatCurrency(candidates.price_promo || candidates.price_base)}`
+              : "Pending promo plan",
+            status: selection ? "completed" : "pending",
+          },
+          {
+            id: 3,
+            title: "Competitor Agent • Market Monitoring",
+            description: "Scanning market shelves to close pricing gaps.",
+            result: selection
+              ? `Competitor alignment at ${formatCurrency(candidates.price_comp)}`
+              : "Pending competitor scan",
+            status: selection ? "completed" : "pending",
+          },
+          {
+            id: 4,
+            title: "Inventory Agent • Supply Guardrail",
+            description: "Applying inventory signal adjustments before final price.",
+            result: selection
+              ? `Final price ${formatCurrency(selection.price_recommended)}`
+              : "Pending execution",
+            status: selection ? "completed" : "pending",
+          },
+        ];
+        return steps;
+      };
+
+      const buildWhatIfTiles = (result) => {
+        if (!result) return null;
+        const orig = result.original;
+        const what = result.what_if;
+        if (!orig || !what) return null;
+        return {
+          original: {
+            header: "Original Recommendation",
+            price: formatCurrency(orig.selection.price_recommended),
+            margin: formatPercent(orig.selection.margin_pct),
+            reasons: orig.reasons,
+          },
+          scenario: {
+            header: "What-If Scenario",
+            price: formatCurrency(what.selection.price_recommended),
+            margin: formatPercent(what.selection.margin_pct),
+            reasons: what.reasons,
+            delta: formatPercent(result.delta.price_change_pct),
+          },
+        };
+      };
+
+      const apiCall = async (endpoint, method = "GET", body = null) => {
+        const options = { method, headers: { "Content-Type": "application/json" } };
+        if (body) options.body = JSON.stringify(body);
+        const response = await fetch(`${API_BASE}${endpoint}`, options);
+        if (!response.ok) {
+          throw new Error(`${response.status} ${response.statusText}`);
+        }
+        return await response.json();
+      };
+
+      const StatusBadge = ({ status }) => {
+        const palette = {
+          completed: "bg-emerald-100/70 text-emerald-700",
+          running: "bg-sky-100/70 text-sky-700",
+          pending: "bg-white/40 text-slate-700",
+        };
+        return (
+          <span className={`inline-flex items-center rounded-full px-3 py-0.5 text-xs font-semibold ${palette[status] || palette.pending}`}>
+            {status.charAt(0).toUpperCase() + status.slice(1)}
+          </span>
+        );
+      };
+
+      const ProductCard = ({ product, isActive, onSelect }) => (
+        <button
+          onClick={() => onSelect(product)}
+          className={`rounded-2xl border-2 p-4 text-left transition ${isActive ? "border-white bg-white/20 shadow-lg backdrop-blur" : "border-white/40 bg-white/10 hover:bg-white/20"}`}
+        >
+          <div className="text-sm text-white/70">{product.category}</div>
+          <div className="mt-1 text-lg font-semibold text-white">{product.label}</div>
+          <div className="mt-3 text-2xl font-bold text-white">{product.priceLabel}</div>
+          <div className="mt-1 text-xs text-white/70">
+            {product.channel} · {product.region}
+          </div>
+        </button>
+      );
+
+      const HeroPanel = ({
+        products,
+        selectedProduct,
+        onSelectProduct,
+        currentAction,
+        setCurrentAction,
+        loading,
+        onExecute,
+        skus,
+        channels,
+        regions,
+        selectedSku,
+        setSelectedSku,
+        selectedChannel,
+        setSelectedChannel,
+        selectedRegion,
+        setSelectedRegion,
+      }) => (
+        <div className="rounded-3xl bg-gradient-to-r from-[#F9B2D0] via-[#F9C3C0] to-[#FCE0C4] p-6 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-700">GCPL Home & Personal Care</div>
+              <h1 className="mt-1 text-3xl font-semibold text-slate-900">
+                Real AI agents powered by GCPL sequential simulator
+              </h1>
+          </div>
+            <div className="rounded-full bg-white/60 px-4 py-1 text-sm font-medium text-slate-700 shadow-sm">
+              Welcome, Pricing Team
+          </div>
+                  </div>
+
+          <div className="mt-6">
+            <div className="text-sm font-medium text-slate-700">Select a GCPL SKU for Dishwash / Home Care AI analysis</div>
+            <div className="mt-3 grid gap-4 md:grid-cols-3">
+              {products.map((product) => (
+                <ProductCard key={product.id} product={product} isActive={selectedProduct?.id === product.id} onSelect={onSelectProduct} />
+              ))}
+          </div>
+        </div>
+
+          <div className="mt-6 rounded-2xl bg-white/30 p-4 backdrop-blur">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-700">Fine-tune selection</div>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <select
+                value={selectedSku}
+                onChange={(e) => setSelectedSku(e.target.value)}
+                className="rounded-2xl border border-white/60 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm focus:outline-none"
+              >
+                <option value="">Select SKU</option>
+                {skus.map((sku) => (
+                  <option key={sku} value={sku}>
+                    {sku}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={selectedChannel}
+                onChange={(e) => setSelectedChannel(e.target.value)}
+                className="rounded-2xl border border-white/60 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm focus:outline-none"
+              >
+                <option value="">Select Channel</option>
+                {channels.map((ch) => (
+                  <option key={ch} value={ch}>
+                    {ch}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={selectedRegion}
+                onChange={(e) => setSelectedRegion(e.target.value)}
+                className="rounded-2xl border border-white/60 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm focus:outline-none"
+              >
+                <option value="">Select Region</option>
+                {regions.map((region) => (
+                  <option key={region} value={region}>
+                    {region}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap gap-3">
+              <select
+                value={currentAction || ""}
+                onChange={(e) => setCurrentAction(e.target.value)}
+                className="rounded-2xl border border-white/60 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm focus:outline-none"
+              >
+                <option value="">Choose action</option>
+                <option value="1">1 · Single SKU Pricing</option>
+                <option value="2">2 · What-If Scenario</option>
+                <option value="3">3 · Batch Run</option>
+                <option value="4">4 · Modify SOP Guardrails</option>
+              </select>
+              <button
+                onClick={onExecute}
+                disabled={loading || !currentAction}
+                className={`rounded-2xl px-6 py-2 text-sm font-semibold shadow-lg transition ${loading || !currentAction ? "cursor-not-allowed bg-emerald-300/60 text-white/80" : "bg-emerald-500 text-white hover:bg-emerald-600"}`}
+              >
+                {loading ? "Running..." : "Generate Price"}
+              </button>
+            </div>
+            <div className="text-xs uppercase tracking-wide text-slate-600">
+              Workflow: Base → Promo → Competitor → Inventory → Compliance
+            </div>
+          </div>
+        </div>
+      );
+
+      const RecommendationPanel = ({ data }) => (
+        <div className="rounded-3xl bg-gradient-to-r from-[#15C39A] via-[#19BBD5] to-[#1D95F8] p-6 text-white shadow-xl">
+          <div className="text-sm font-medium uppercase tracking-wide text-white/80">AI-generated pricing recommendations</div>
+          <div className="mt-1 text-2xl font-semibold">{data.title}</div>
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            {data.tiles.map((tile) => (
+              <div key={tile.label} className="rounded-2xl border border-white/20 bg-white/10 p-4 shadow-sm">
+                <div className="text-sm text-white/70">{tile.label}</div>
+                <div className="mt-2 text-3xl font-bold text-white">{tile.value}</div>
+                <div className="mt-1 text-xs text-white/80">{tile.description}</div>
+          </div>
+            ))}
+          </div>
+          <div className="mt-4 text-sm text-white/80">{data.summary}</div>
+          <button className="mt-4 rounded-2xl border border-white/40 bg-white/10 px-4 py-2 text-sm font-medium text-white shadow-sm">
+            Set This Price
+          </button>
+        </div>
+      );
+
+      const AgentInsightCard = ({ insight }) => (
+        <div className="rounded-3xl bg-white/5 p-6 shadow-xl">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-white">{insight.title}</h3>
+            <StatusBadge status="completed" />
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {insight.items.map((item) => (
+              <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-sm text-white/70">{item.label}</div>
+                <div className="mt-2 text-2xl font-semibold text-white">{item.value}</div>
+                <div className="mt-1 text-xs text-white/70">{item.note}</div>
+          </div>
+            ))}
+          </div>
+        </div>
+      );
+
+      const ExecutionStepsPanel = ({ steps }) => (
+        <div className="rounded-3xl bg-white p-6 text-slate-900 shadow-xl">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Execution Steps</h3>
+            <StatusBadge status="completed" />
+          </div>
+          <div className="mt-4 space-y-4">
+            {steps.map((step) => (
+              <div key={step.id} className="rounded-2xl border border-slate-100 p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">{step.title}</h4>
+                  <StatusBadge status={step.status} />
+                </div>
+                <div className="mt-2 text-sm text-slate-600">{step.description}</div>
+                <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">Result: {step.result}</div>
+          </div>
+            ))}
+          </div>
+        </div>
+      );
+
+      const BatchTable = ({ result }) => (
+        <div className="rounded-3xl bg-white/5 p-6 text-white shadow-xl">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Batch Run Results ({result.count} rows)</h3>
+            <StatusBadge status="completed" />
+              </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full divide-y divide-white/10 text-sm">
+              <thead className="bg-white/5 text-xs uppercase tracking-wide text-white/70">
+                <tr>
+                  <th className="px-4 py-3 text-left">SKU ID</th>
+                  <th className="px-4 py-3 text-left">Channel</th>
+                  <th className="px-4 py-3 text-left">Region</th>
+                  <th className="px-4 py-3 text-right">Base</th>
+                  <th className="px-4 py-3 text-right">Promo</th>
+                  <th className="px-4 py-3 text-right">Comp</th>
+                  <th className="px-4 py-3 text-right">Inventory</th>
+                  <th className="px-4 py-3 text-right">Final</th>
+                  <th className="px-4 py-3 text-right">Margin %</th>
+                  </tr>
+                </thead>
+              <tbody className="divide-y divide-white/5">
+                {result.results.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-white/5">
+                    <td className="px-4 py-3">{row.sku_id}</td>
+                    <td className="px-4 py-3 text-white/80">{row.channel}</td>
+                    <td className="px-4 py-3 text-white/80">{row.region}</td>
+                    <td className="px-4 py-3 text-right">{formatCurrency(row.price_base)}</td>
+                    <td className="px-4 py-3 text-right">{formatCurrency(row.price_promo)}</td>
+                    <td className="px-4 py-3 text-right">{formatCurrency(row.price_comp)}</td>
+                    <td className="px-4 py-3 text-right">{formatCurrency(row.price_inventory)}</td>
+                    <td className="px-4 py-3 text-right text-emerald-300">{formatCurrency(row.final_price)}</td>
+                    <td className="px-4 py-3 text-right">{formatPercent(row.margin_pct)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+
+      const WhatIfComparison = ({ data }) => (
+        <div className="rounded-3xl bg-white p-6 text-slate-900 shadow-xl">
+          <h3 className="text-lg font-semibold">What-If Comparison</h3>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {[data.original, data.scenario].map((card) => (
+              <div key={card.header} className="rounded-2xl border border-slate-100 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm text-slate-500">{card.header}</div>
+                    <div className="text-3xl font-bold text-slate-900">{card.price}</div>
+                  </div>
+                  <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                    Margin {card.margin}
+            </div>
+                  </div>
+                {card.delta && (
+                  <div className="mt-2 text-xs font-semibold text-emerald-600">Δ Price {card.delta}</div>
+                )}
+                <div className="mt-3 space-y-2 text-xs text-slate-500">
+                  <div>• Base: {card.reasons.base}</div>
+                  <div>• Promo: {JSON.stringify(card.reasons.promo)}</div>
+                  <div>• Competitor: {JSON.stringify(card.reasons.comp)}</div>
+                  <div>• Inventory: {JSON.stringify(card.reasons.inv)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+
+      const WhatIfModal = ({ isOpen, onClose, skuId, channel, region, onSubmit }) => {
+        const [overrides, setOverrides] = useState({
+          promo_depth_pct: "",
+          competitor_price: "",
+          inv_days: "",
+          seasonality_index: "",
+          festival_lift: "",
+          base_uplift: "",
+          sop_min_margin_pct: "",
+        });
+
+        useEffect(() => {
+          if (!isOpen) {
+            setOverrides({
+              promo_depth_pct: "",
+              competitor_price: "",
+              inv_days: "",
+              seasonality_index: "",
+              festival_lift: "",
+              base_uplift: "",
+              sop_min_margin_pct: "",
+            });
+          }
+        }, [isOpen]);
+
+        if (!isOpen) return null;
+
+        const handleSubmit = () => {
+          const payload = { sku_id: skuId, channel, region };
+          if (overrides.promo_depth_pct) payload.promo_depth_pct = parseFloat(overrides.promo_depth_pct);
+          if (overrides.competitor_price) payload.competitor_price = parseFloat(overrides.competitor_price);
+          if (overrides.inv_days) payload.inv_days = parseFloat(overrides.inv_days);
+          if (overrides.seasonality_index) payload.seasonality_index = parseFloat(overrides.seasonality_index);
+          if (overrides.festival_lift) payload.festival_lift = parseFloat(overrides.festival_lift);
+          if (overrides.base_uplift) payload.base_uplift = parseFloat(overrides.base_uplift);
+          if (overrides.sop_min_margin_pct) {
+            payload.sop_overrides = { min_margin_pct: parseFloat(overrides.sop_min_margin_pct) };
+          }
+          onSubmit(payload);
+          onClose();
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4">
+            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <h2 className="text-lg font-medium text-slate-900">What-If Scenario: {skuId}</h2>
+                <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">Close</button>
+            </div>
+              <div className="max-h-[75vh] space-y-4 overflow-y-auto px-6 py-6">
+                <p className="text-sm text-slate-600">Enter overrides (blank to skip)</p>
+                {[
+                  { key: "promo_depth_pct", label: "Promo depth % override" },
+                  { key: "competitor_price", label: "Competitor price override" },
+                  { key: "inv_days", label: "Inventory days override" },
+                  { key: "seasonality_index", label: "Seasonality index override" },
+                  { key: "festival_lift", label: "Festival lift override" },
+                  { key: "base_uplift", label: "Base uplift multiplicative" },
+                  { key: "sop_min_margin_pct", label: "Override SOP min_margin_pct" },
+                ].map((field) => (
+                  <div key={field.key}>
+                    <label className="mb-1 block text-sm text-slate-700">{field.label}</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={overrides[field.key]}
+                      onChange={(e) => setOverrides((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="e.g., 1.2"
+                    />
+                  </div>
+                ))}
+                <div className="flex justify-end gap-2 pt-4">
+                  <button onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                    Cancel
+                  </button>
+                  <button onClick={handleSubmit} className="rounded-lg border border-emerald-300 bg-emerald-500 px-4 py-2 text-sm text-white hover:bg-emerald-600">
+                    Run What-If
+                  </button>
+                  </div>
+                    </div>
+                  </div>
+                  </div>
+        );
+      };
+
+      const GuardrailsModal = ({ isOpen, onClose, guardrails, onUpdate }) => {
+        const [localGuardrails, setLocalGuardrails] = useState(guardrails || {});
+
+        useEffect(() => {
+          setLocalGuardrails(guardrails || {});
+        }, [guardrails]);
+
+        if (!isOpen) return null;
+
+        const handleSubmit = async () => {
+          await onUpdate(localGuardrails);
+          onClose();
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4">
+            <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <h2 className="text-lg font-medium text-slate-900">Modify SOP Guardrails</h2>
+                <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">Close</button>
+              </div>
+              <div className="space-y-4 px-6 py-6">
+                {[
+                  { key: "min_margin_pct", label: "min_margin_pct" },
+                  { key: "max_promo_depth_pct", label: "max_promo_depth_pct" },
+                  { key: "auto_approve_pct", label: "auto_approve_pct" },
+                  { key: "manager_review_pct", label: "manager_review_pct" },
+                ].map((field) => (
+                  <div key={field.key}>
+                    <label className="mb-1 block text-sm text-slate-700">{field.label}</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={localGuardrails[field.key] ?? ""}
+                      onChange={(e) =>
+                        setLocalGuardrails((prev) => ({
+                          ...prev,
+                          [field.key]: e.target.value ? parseFloat(e.target.value) : "",
+                        }))
+                      }
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    />
+                  </div>
+                ))}
+                <div className="flex justify-end gap-2 pt-4">
+                  <button onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                    Cancel
+                  </button>
+                  <button onClick={handleSubmit} className="rounded-lg border border-emerald-300 bg-emerald-500 px-4 py-2 text-sm text-white hover:bg-emerald-600">
+                    Update Guardrails
+                      </button>
+                    </div>
+                  </div>
+            </div>
+          </div>
+        );
+      };
+
+      const App = () => {
+        const [skus, setSkus] = useState([]);
+        const [channels, setChannels] = useState([]);
+        const [regions, setRegions] = useState([]);
+        const [guardrails, setGuardrails] = useState(null);
+
+        const [selectedProduct, setSelectedProduct] = useState(null);
+        const [selectedSku, setSelectedSku] = useState("");
+        const [selectedChannel, setSelectedChannel] = useState("");
+        const [selectedRegion, setSelectedRegion] = useState("");
+        const [currentAction, setCurrentAction] = useState("");
+        const [loading, setLoading] = useState(false);
+        const [error, setError] = useState(null);
+
+        const [singleSKUResult, setSingleSKUResult] = useState(null);
+        const [whatIfResult, setWhatIfResult] = useState(null);
+        const [batchResult, setBatchResult] = useState(null);
+        const [whatIfModalOpen, setWhatIfModalOpen] = useState(false);
+        const [guardrailsModalOpen, setGuardrailsModalOpen] = useState(false);
+
+        useEffect(() => {
+          const loadDatasetInfo = async () => {
+            try {
+              const info = await apiCall("/dataset/info");
+              setSkus(info.skus || []);
+              setChannels(info.channels || []);
+              setRegions(info.regions || []);
+              const guard = await apiCall("/guardrails");
+              setGuardrails(guard);
+            } catch (err) {
+              setError("Failed to load dataset info. Make sure backend runs at http://localhost:8000");
+            }
+          };
+          loadDatasetInfo();
+        }, []);
+
+        useEffect(() => {
+          if (!selectedSku && skus.length) setSelectedSku(skus[0]);
+        }, [skus, selectedSku]);
+
+        useEffect(() => {
+          if (!selectedChannel && channels.length) setSelectedChannel(channels[0]);
+        }, [channels, selectedChannel]);
+
+        useEffect(() => {
+          if (!selectedRegion && regions.length) setSelectedRegion(regions[0]);
+        }, [regions, selectedRegion]);
+
+        const curatedProducts = useMemo(
+          () => buildCuratedProducts(skus, channels, regions),
+          [skus, channels, regions]
+        );
+
+        useEffect(() => {
+          if (!selectedProduct && curatedProducts.length) {
+            setSelectedProduct(curatedProducts[0]);
+            setSelectedSku(curatedProducts[0].sku);
+            setSelectedChannel(curatedProducts[0].channel);
+            setSelectedRegion(curatedProducts[0].region);
+          }
+        }, [curatedProducts, selectedProduct]);
+
+        const handleSelectProduct = (product) => {
+          setSelectedProduct(product);
+          if (product.sku) setSelectedSku(product.sku);
+          if (product.channel) setSelectedChannel(product.channel);
+          if (product.region) setSelectedRegion(product.region);
+        };
+
+        const resetResults = () => {
+          setSingleSKUResult(null);
+          setWhatIfResult(null);
+          setBatchResult(null);
+        };
+
+        const handleAction = async () => {
+          if (!currentAction) return;
+          setLoading(true);
+          setError(null);
+          resetResults();
+
+          try {
+            if (currentAction === "1") {
+              if (!selectedSku || !selectedChannel || !selectedRegion) {
+                setError("Please select SKU, Channel, and Region");
+                setLoading(false);
+                return;
+              }
+              const result = await apiCall("/pricing/single-sku", "POST", {
+                sku_id: selectedSku,
+                channel: selectedChannel,
+                region: selectedRegion,
+              });
+              setSingleSKUResult(result);
+            } else if (currentAction === "2") {
+              if (!selectedSku || !selectedChannel || !selectedRegion) {
+                setError("Please select SKU, Channel, and Region");
+                setLoading(false);
+                return;
+              }
+              setWhatIfModalOpen(true);
+              setLoading(false);
+              return;
+            } else if (currentAction === "3") {
+              const limit = prompt("Enter max rows (blank = all):");
+              const result = await apiCall(`/pricing/batch${limit ? `?limit=${limit}` : ""}`, "GET");
+              setBatchResult(result);
+            } else if (currentAction === "4") {
+              setGuardrailsModalOpen(true);
+              setLoading(false);
+              return;
+            }
+          } catch (err) {
+            setError(err.message || "An error occurred");
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        const handleWhatIfSubmit = async (payload) => {
+          setLoading(true);
+          setError(null);
+          try {
+            const result = await apiCall("/pricing/what-if", "POST", payload);
+            setWhatIfResult(result);
+          } catch (err) {
+            setError(err.message || "An error occurred");
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        const handleGuardrailsUpdate = async (newGuardrails) => {
+          setLoading(true);
+          setError(null);
+          try {
+            const result = await apiCall("/guardrails", "PUT", newGuardrails);
+            setGuardrails(result.guardrails);
+          } catch (err) {
+            setError(err.message || "An error occurred");
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        const context = { sku: selectedSku, channel: selectedChannel, region: selectedRegion };
+        const primaryResult = whatIfResult || singleSKUResult;
+        const recommendationData = buildRecommendationData(primaryResult, context);
+        const agentInsight = buildAgentInsight(singleSKUResult || whatIfResult?.original);
+        const executionSteps = buildExecutionSteps(primaryResult);
+        const whatIfTiles = buildWhatIfTiles(whatIfResult);
+
+        return (
+          <div className="min-h-screen bg-slate-950 text-white">
+            <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
+              <HeroPanel
+                products={curatedProducts}
+                selectedProduct={selectedProduct}
+                onSelectProduct={handleSelectProduct}
+                currentAction={currentAction}
+                setCurrentAction={setCurrentAction}
+                loading={loading}
+                onExecute={handleAction}
+                skus={skus}
+                channels={channels}
+                regions={regions}
+                  selectedSku={selectedSku}
+                setSelectedSku={setSelectedSku}
+                selectedChannel={selectedChannel}
+                setSelectedChannel={setSelectedChannel}
+                selectedRegion={selectedRegion}
+                setSelectedRegion={setSelectedRegion}
+              />
+
+              {error && (
+                <div className="rounded-2xl border border-rose-300/40 bg-rose-500/20 px-4 py-3 text-sm text-rose-100">
+                  {error}
+                    </div>
+              )}
+
+              <div className="grid gap-6 lg:grid-cols-3">
+                <div className="space-y-6 lg:col-span-2">
+                  <RecommendationPanel data={recommendationData} />
+                  <AgentInsightCard insight={agentInsight} />
+                  {whatIfTiles && <WhatIfComparison data={whatIfTiles} />}
+                  {batchResult && <BatchTable result={batchResult} />}
+                  </div>
+                <div className="space-y-6">
+                  <ExecutionStepsPanel steps={executionSteps} />
+                  {guardrails && (
+                    <div className="rounded-3xl bg-white/5 p-6 text-sm text-white/80 shadow-xl">
+                      <div className="text-xs uppercase tracking-wide text-white/60">Current Guardrails</div>
+                      <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-xs leading-relaxed text-white/70">
+                        {JSON.stringify(guardrails)}
+                                </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <WhatIfModal
+              isOpen={whatIfModalOpen}
+              onClose={() => setWhatIfModalOpen(false)}
+              skuId={selectedSku}
+              channel={selectedChannel}
+              region={selectedRegion}
+              onSubmit={handleWhatIfSubmit}
+            />
+
+            <GuardrailsModal
+              isOpen={guardrailsModalOpen}
+              onClose={() => setGuardrailsModalOpen(false)}
+              guardrails={guardrails}
+              onUpdate={handleGuardrailsUpdate}
+            />
+          </div>
+        );
+      };
+
+      const container = document.getElementById("app");
+      if (ReactDOM.createRoot) {
+        ReactDOM.createRoot(container).render(<App />);
+      } else {
+        ReactDOM.render(<App />, container);
+      }
+    </script>
+  </body>
+</html>
+
